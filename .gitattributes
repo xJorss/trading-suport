@@ -1,0 +1,20 @@
+# Normalise line endings on checkout so a Windows clone and a Linux clone
+# produce identical diffs. Files stay LF in the repository.
+* text=auto eol=lf
+
+# Binary assets are left untouched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Windows-only scripts keep CRLF so they still run after checkout.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Lockfiles are generated; collapsing them in diffs hides real changes.
+package-lock.json -diff linguist-generated
