@@ -49,9 +49,12 @@ pnpm-debug.log*
 *.tsbuildinfo
 
 # Entorno y estado
+# `.env.*` cubre .env.local, .env.production, .env.docker... La excepción de
+# abajo mantiene versionada la plantilla, que no lleva secretos y es la que
+# referencia el README.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 backend/engine_state.json
 backend/engine_state.json.tmp
 *.log

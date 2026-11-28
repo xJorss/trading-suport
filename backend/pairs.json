@@ -1,0 +1,4 @@
+{
+  "pairs": ["BTCUSDT", "ETHUSDT"],
+  "timeframes": ["5m", "1h"]
+}

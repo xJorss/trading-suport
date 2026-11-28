@@ -1,0 +1,26 @@
+# Local virtualenv — the image builds its own from requirements.txt.
+.venv/
+venv/
+env/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local state and secrets must never enter the image layer.
+engine_state.json
+engine_state.json.tmp
+.env
+.env.*
+
+# Tooling noise
+*.log
+.git/
+.gitignore
+.gitattributes
+Dockerfile
+.dockerignore

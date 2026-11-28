@@ -98,6 +98,7 @@ async def health() -> dict[str, Any]:
         "feed_connected": engine.feed.connected,
         "feed_source": engine.feed.source,
         "feed_last_error": engine.feed.last_error,
+        "market": engine.market.as_dict(),
         "timeframes": list(engine.timeframes),
         "evaluations": engine.evaluation_count,
         "signals": len(engine.signals),

@@ -49,13 +49,16 @@ from typing import Any
 import websockets
 from websockets.exceptions import ConnectionClosed
 
+from .config import DEFAULT_PAIRS, DEFAULT_TIMEFRAMES, load_market_config
+
 log = logging.getLogger(__name__)
 
 FSTREAM_BASE = "wss://fstream.binance.com/stream"
 REST_KLINES_URL = "https://fapi.binance.com/fapi/v1/klines"
 
-DEFAULT_PAIRS = ("BTCUSDT", "ETHUSDT")
-DEFAULT_TIMEFRAMES = ("5m", "1h")
+# Re-exported from engine.config so existing imports of these names keep
+# working. The live values come from backend/pairs.json at construction time.
+__all__ = ["BinanceFeed", "Kline", "Tick", "DEFAULT_PAIRS", "DEFAULT_TIMEFRAMES"]
 
 # Closed candles retained per (pair, timeframe). 300 x 1h ≈ 12 days, which is
 # far more than any indicator here needs; memory stays fixed per pair.
@@ -136,10 +139,14 @@ class BinanceFeed:
         feed.closed_sequences()             -> {(pair, timeframe): int}
         feed.last_closed(pair, timeframe)   -> Kline | None
         feed.source                         -> "websocket" | "rest" | "none"
+
+    Pairs and timeframes default to backend/pairs.json. The manager passes them
+    explicitly, so the file is read once per boot; a standalone
+    `BinanceFeed()` still picks up the configured market.
     """
 
-    pairs: tuple[str, ...] = DEFAULT_PAIRS
-    timeframes: tuple[str, ...] = DEFAULT_TIMEFRAMES
+    pairs: tuple[str, ...] = field(default_factory=lambda: load_market_config().pairs)
+    timeframes: tuple[str, ...] = field(default_factory=lambda: load_market_config().timeframes)
 
     ticks: dict[str, Tick] = field(default_factory=dict)
     histories: dict[str, dict[str, deque[Kline]]] = field(default_factory=dict)

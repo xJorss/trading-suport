@@ -1,7 +1,28 @@
 import { useEffect, useState } from "react";
 import type { EngineState, SocketStatus } from "../types";
 
-const DEFAULT_URL = "ws://127.0.0.1:8000/ws";
+const DEFAULT_URL = resolveSocketUrl();
+
+/**
+ * Websocket endpoint.
+ *
+ * Order of precedence: an explicit VITE_WS_URL, then VITE_API_BASE with the
+ * scheme swapped to ws(s), then the page's own origin. The last case is what
+ * makes the container work — nginx proxies /ws to the backend, so the browser
+ * never needs to know the backend's host.
+ */
+function resolveSocketUrl(): string {
+  const explicit = import.meta.env.VITE_WS_URL;
+  if (explicit) return explicit;
+
+  const apiBase = import.meta.env.VITE_API_BASE;
+  if (apiBase) {
+    return `${apiBase.replace(/^http/, "ws").replace(/\/+$/, "")}/ws`;
+  }
+
+  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${scheme}//${window.location.host}/ws`;
+}
 
 // Reconnect policy: 1s, 2s, 4s ... capped at 15s, plus jitter so a backend
 // restart doesn't get hammered by every tab at the same millisecond.

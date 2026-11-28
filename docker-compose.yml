@@ -1,0 +1,48 @@
+# trading-copilot — backend signal engine + frontend panel.
+#
+#   docker compose up -d --build
+#
+# Ports: 8000 (FastAPI) and 5173 (nginx serving the built SPA).
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: trading-copilot-backend:latest
+    container_name: trading-copilot-backend
+    ports:
+      - "8000:8000"
+
+    # Telegram credentials. `required: false` keeps a fresh clone working:
+    # without backend/.env the engine boots with alerts disabled instead of
+    # refusing to start. Needs Compose >= 2.24.
+    env_file:
+      - path: ./backend/.env
+        required: false
+
+    environment:
+      # The snapshot lives on the named volume, not in the container layer.
+      STATE_FILE_PATH: /app/state/engine_state.json
+
+    volumes:
+      # Paper-trading state survives `docker compose down` and rebuilds.
+      - engine_state:/app/state
+      # Edit backend/pairs.json and restart the service — no rebuild needed.
+      - ./backend/pairs.json:/app/pairs.json:ro
+
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    image: trading-copilot-frontend:latest
+    container_name: trading-copilot-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  engine_state:
+    name: trading-copilot-engine-state

@@ -1,0 +1,25 @@
+# Installed from package-lock.json inside the build stage.
+node_modules/
+
+# Build output is produced by `npm run build`, never copied in.
+dist/
+.vite/
+
+# Tooling noise
+*.log
+npm-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# VCS and image metadata
+.git/
+.gitignore
+.gitattributes
+Dockerfile
+.dockerignore

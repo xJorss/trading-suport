@@ -16,9 +16,10 @@ import { EquityChart } from "./components/EquityChart";
 import { useEngineSocket } from "./hooks/useEngineSocket";
 import type { ClosedPosition } from "./types";
 
-// The backend is fixed at :8000 for local dev (see README / uvicorn command).
-// The websocket hook uses the same host, so the two never disagree.
-const API_BASE = "http://127.0.0.1:8000";
+// Same-origin by default: Vite proxies /api and /ws in development, nginx
+// proxies them inside the container. Set VITE_API_BASE to talk to a backend on
+// another host directly (and to skip the proxy entirely).
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
 
 function formatUptime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "0s";

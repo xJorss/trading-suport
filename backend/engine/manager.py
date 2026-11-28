@@ -46,12 +46,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, TypedDict
 
 from .alerts import AlertManager
 from .binance_feed import BinanceFeed, Kline, Tick
+from .config import (
+    DEFAULT_PAIRS,
+    DEFAULT_TIMEFRAMES,
+    SUPPORTED_TIMEFRAMES,
+    MarketConfig,
+    load_market_config,
+)
 from .positions import MODE_TIMEFRAME, PositionTracker
 from .risk import DEFAULT_CAPITAL, RiskManager
 from .strategies.aggressive import AggressiveStrategy
@@ -60,8 +68,9 @@ from .strategies.safe import SafeStrategy
 
 log = logging.getLogger(__name__)
 
-PAIRS = ("BTCUSDT", "ETHUSDT")
-TIMEFRAMES = ("5m", "1h")
+# Fallbacks only. The live market comes from backend/pairs.json.
+PAIRS = DEFAULT_PAIRS
+TIMEFRAMES = DEFAULT_TIMEFRAMES
 
 MAX_SIGNALS = 500        # signal log ceiling
 STATE_INTERVAL = 1.0     # state publishing cadence, seconds
@@ -71,6 +80,29 @@ DEDUPE_WINDOW = 30.0     # seconds before the same (pair, mode) can re-fire
 # where uvicorn was launched from.
 STATE_FILE_NAME = "engine_state.json"
 STATE_FILE = Path(__file__).resolve().parents[1] / STATE_FILE_NAME
+
+# Override used by the container image, where the snapshot lives on a mounted
+# volume instead of inside the (ephemeral) application layer.
+STATE_FILE_ENV = "STATE_FILE_PATH"
+
+
+def _resolve_state_file() -> Path:
+    """
+    Snapshot location: `STATE_FILE_PATH` when set, else backend/engine_state.json.
+
+    A relative override is resolved against backend/ so the behaviour matches
+    the default. An unwritable path is not caught here — both owners already
+    log and swallow save failures.
+    """
+    override = os.getenv(STATE_FILE_ENV, "").strip()
+    if not override:
+        return STATE_FILE
+
+    candidate = Path(override).expanduser()
+    if not candidate.is_absolute():
+        candidate = STATE_FILE.parent / candidate
+    return candidate
+
 
 
 class StoredSignal(Signal):
@@ -82,25 +114,36 @@ class StoredSignal(Signal):
 class EngineManager:
     def __init__(
         self,
-        pairs: tuple[str, ...] = PAIRS,
-        timeframes: tuple[str, ...] = TIMEFRAMES,
+        pairs: tuple[str, ...] | None = None,
+        timeframes: tuple[str, ...] | None = None,
     ) -> None:
-        self.pairs = pairs
-        self.timeframes = timeframes
+        # `None` means "read backend/pairs.json". Explicit arguments win, which
+        # is what the tests use to run a fixed single-pair market.
+        self.market: MarketConfig = load_market_config()
+        self.pairs: tuple[str, ...] = tuple(pairs) if pairs else self.market.pairs
+        self.timeframes: tuple[str, ...] = (
+            tuple(timeframes) if timeframes else self.market.timeframes
+        )
 
-        self.feed = BinanceFeed(pairs=pairs, timeframes=timeframes)
+        self.feed = BinanceFeed(pairs=self.pairs, timeframes=self.timeframes)
         self.alerts = AlertManager()
         self.risk = RiskManager()
         self.positions = PositionTracker()
 
         # Shared snapshot of capital + book. Written atomically by both owners.
-        self.state_file: Path = STATE_FILE
+        self.state_file: Path = _resolve_state_file()
 
-        # One strategy per timeframe. Adding a timeframe means adding a
-        # strategy here and nothing else — the loop is generic.
+        # One strategy per timeframe. Adding a timeframe means adding an entry
+        # here and nothing else — the loop is generic. Only configured
+        # timeframes are instantiated, so a 1h-only config runs no 5m work.
+        strategy_factories: dict[str, type[BaseStrategy]] = {
+            "5m": AggressiveStrategy,
+            "1h": SafeStrategy,
+        }
         self.strategies_by_timeframe: dict[str, BaseStrategy] = {
-            "5m": AggressiveStrategy(pairs=pairs),
-            "1h": SafeStrategy(pairs=pairs),
+            timeframe: factory(pairs=self.pairs)
+            for timeframe, factory in strategy_factories.items()
+            if timeframe in self.timeframes
         }
 
         self.signals: list[StoredSignal] = []
@@ -108,7 +151,7 @@ class EngineManager:
         # Last seen closed-candle counter per (pair, timeframe). The delta is
         # the only trigger for an evaluation.
         self._seen_seq: dict[tuple[str, str], int] = {
-            (p, tf): 0 for p in pairs for tf in timeframes
+            (p, tf): 0 for p in self.pairs for tf in self.timeframes
         }
         self._last_eval_at: dict[tuple[str, str], float] = {}
         self._last_signal_key: dict[tuple[str, str], float] = {}
@@ -133,9 +176,11 @@ class EngineManager:
         self._stop_event.clear()
         self.started_at = time.time()
         log.info(
-            "Starting EngineManager — pairs=%s timeframes=%s",
+            "Starting EngineManager — pairs=%s timeframes=%s (config: %s, %s)",
             ", ".join(self.pairs),
             ", ".join(self.timeframes),
+            self.market.source,
+            self.state_file,
         )
 
         # Restore before the feed starts: the first signal must be sized
@@ -507,6 +552,13 @@ class EngineManager:
                 "source": self.feed.source,
                 "timeframes": list(self.timeframes),
                 "evaluations": self.evaluation_count,
+            },
+            # Where the pair/timeframe list came from — lets the panel show
+            # "defaults" when pairs.json is missing instead of silently lying.
+            "market": {
+                "pairs": list(self.pairs),
+                "timeframes": list(self.timeframes),
+                "source": self.market.source,
             },
             "prices": prices,
             "candles": self._candle_state(),
